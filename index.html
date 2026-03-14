@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Antigravity Scalp Intel | Day Trading Signals</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <h1>Antigravity scalp·pro</h1>
+            <p class="subtitle">High-frequency buy/sell signals & aggressive risk management.</p>
+        </header>
+
+        <main class="dashboard-grid">
+            <!-- Risk Management Card -->
+            <section class="card" id="risk-management">
+                <div class="card-title">
+                    <i class="fas fa-shield-halved"></i>
+                    <h2>Risk Management Calculator</h2>
+                </div>
+                <div class="input-group">
+                    <label for="total-balance">Total Trading Balance ($)</label>
+                    <input type="number" id="total-balance" placeholder="e.g. 1000" value="1000">
+                </div>
+                <div class="input-group">
+                    <label for="risk-percent">Risk per Trade (%)</label>
+                    <input type="number" id="risk-percent" placeholder="e.g. 1" value="1">
+                </div>
+                <div class="input-group">
+                    <label for="entry-price">Entry Price ($)</label>
+                    <input type="number" id="entry-price" placeholder="e.g. 70000">
+                </div>
+                <div class="input-group">
+                    <label for="stop-loss">Stop Loss Price ($)</label>
+                    <input type="number" id="stop-loss" placeholder="e.g. 68000">
+                </div>
+                <div class="input-group">
+                    <label for="leverage">Planned Leverage (x)</label>
+                    <input type="number" id="leverage" value="1">
+                </div>
+                <button id="calculate-risk">Calculate Position</button>
+
+                <div class="result-box" id="risk-results" style="display: none;">
+                    <div class="result-item">
+                        <span class="result-label">Position Size (Base):</span>
+                        <span class="result-value" id="res-pos-size">0.00</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">Position Value ($):</span>
+                        <span class="result-value" id="res-pos-value">$0.00</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">Stop-Loss Distance:</span>
+                        <span class="result-value" id="res-sl-dist">0.00%</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">Liquidation Risk:</span>
+                        <span class="result-value" id="res-liq-risk">Low</span>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Bot Performance Card -->
+            <section class="card" id="bot-performance">
+                <div class="card-title">
+                    <i class="fas fa-microchip"></i>
+                    <h2>Adaptive Alpha Engine</h2>
+                </div>
+                <div class="result-box">
+                    <div class="result-item">
+                        <span class="result-label">Status:</span>
+                        <span class="result-value status-success" id="bot-status">OPTIMIZED [MULTI-COIN]</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">Starting Capital:</span>
+                        <span class="result-value">$100.00</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">Current Balance:</span>
+                        <span class="result-value" id="bot-balance">$148.43</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">Portfolio ROI:</span>
+                        <span class="result-value status-success" id="bot-roi">+48.43%</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">Success Rate:</span>
+                        <span class="result-value" id="bot-winrate">44.1% (216W/273L)</span>
+                    </div>
+                </div>
+                <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 1rem; font-style: italic;">
+                    Regime: Trend (ICT) / Range (SMC Sweep) | Dynamic Leverage
+                </p>
+            </section>
+
+            <!-- Signal Intelligence Card -->
+            <section class="card" id="market-scanner">
+                <div class="card-title">
+                    <i class="fas fa-bolt"></i>
+                    <h2>Signal Intelligence Center</h2>
+                </div>
+                <div class="input-group">
+                    <label for="symbol-select">Select Asset</label>
+                    <select id="symbol-select">
+                        <option value="BTC/USDT">BTC/USDT (Bitcoin)</option>
+                        <option value="ETH/USDT">ETH/USDT (Ethereum)</option>
+                        <option value="SOL/USDT">SOL/USDT (Solana)</option>
+                        <option value="DOGE/USDT">DOGE/USDT (Dogecoin)</option>
+                    </select>
+                </div>
+                <button id="scan-now">Generate Alpha Signal</button>
+
+                <div class="result-box" id="scan-results" style="display: none;">
+                    <div class="result-item">
+                        <span class="result-label">Real-Time Price:</span>
+                        <span class="result-value" id="scan-price">$0.00</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">Active Strategy:</span>
+                        <span class="result-value" id="scan-trend">Initializing...</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">Market Strength:</span>
+                        <span class="result-value" id="scan-rsi">ADX: --</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">Adaptive Bias:</span>
+                        <span class="result-value" style="color: var(--accent-primary);">Regime-Aware</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">CURRENT SIGNAL:</span>
+                        <span class="result-value" id="scan-sentiment">Analyzing...</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Educational Quick Tips -->
+            <section class="card" id="tips">
+                <div class="card-title">
+                    <i class="fas fa-fire"></i>
+                    <h2>Scalping & Leverage Rules</h2>
+                </div>
+                <div style="font-size: 0.9rem; line-height: 1.6; color: var(--text-secondary);">
+                    <p style="margin-bottom: 0.5rem;"><strong style="color: var(--accent-primary);">1. Leverage is a Multiplier:</strong> Using 20x leverage means a 5% move against you is a 100% loss (Liquidation). Always check the "Liquidation Risk" in the calculator.</p>
+                    <p style="margin-bottom: 0.5rem;"><strong style="color: var(--accent-primary);">2. Stop-Loss Tightness:</strong> For high leverage, your stop-loss must be tight. If you don't use a stop-loss, you are gambling, not trading.</p>
+                    <p style="margin-bottom: 0.5rem;"><strong style="color: var(--accent-primary);">3. Scale-In:</strong> Don't enter your whole position at once. Small entries reduce emotional stress.</p>
+                    <p><strong style="color: var(--danger);">4. The 5-Minute Rule:</strong> For quick trades, look for signals on the 5m and 15m charts. Our tool currently scans the 1h for stability.</p>
+                </div>
+            </section>
+            <!-- Portfolio Alpha Scanner Card -->
+            <section class="card" id="portfolio-scanner">
+                <div class="card-title">
+                    <i class="fas fa-layer-group"></i>
+                    <h2>Portfolio Alpha Scanner</h2>
+                </div>
+                <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;">
+                    Scans Top 10 coins for high-probability Adaptive Alpha signals.
+                </p>
+                <button id="portfolio-scan">Run Portfolio Scan</button>
+                
+                <div id="portfolio-results" style="display: none; margin-top: 1.5rem;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; color: var(--text-primary);">
+                        <thead>
+                            <tr style="text-align: left; border-bottom: 1px solid var(--glass-border);">
+                                <th style="padding: 0.5rem;">Coin</th>
+                                <th style="padding: 0.5rem;">Price</th>
+                                <th style="padding: 0.5rem;">Regime</th>
+                                <th style="padding: 0.5rem;">Signal</th>
+                            </tr>
+                        </thead>
+                        <tbody id="portfolio-body">
+                            <!-- Rows injected by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+    <script type="module" src="main.js"></script>
+</body>
+</html>
