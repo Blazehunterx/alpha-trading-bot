@@ -48,8 +48,18 @@ function detectFVG(data) {
     return null;
 }
 
+import fs from 'fs';
+
 async function runLiveBot() {
     console.log(`\n=== ⚡ LIVE SIGNAL SCAN [${new Date().toISOString()}] ===`);
+    
+    let isLiveTrading = false;
+    try {
+        const state = JSON.parse(fs.readFileSync('./trading_state.json', 'utf8'));
+        isLiveTrading = state.autoTrade;
+    } catch (e) {}
+
+    console.log(`STATUS: ${isLiveTrading ? '🔴 LIVE EXECUTION ENABLED' : '🟢 MONITORING ONLY'}`);
     
     for (const symbol of SYMBOLS) {
         const data = await fetchHistory(symbol);

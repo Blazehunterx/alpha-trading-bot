@@ -66,6 +66,36 @@
                 </div>
             </section>
             
+            <!-- Live Exchange Status Section -->
+            <section class="card" id="exchange-status">
+                <div class="card-title">
+                    <i class="fas fa-server"></i>
+                    <h2>Live Exchange Bridge</h2>
+                </div>
+                <div class="status-grid">
+                    <div class="status-item">
+                        <span class="label">Bitvavo (EUR):</span>
+                        <span id="bitvavo-balance" class="value">--</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="label">BTCC (USDT):</span>
+                        <span id="btcc-balance" class="value">--</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="label">Connection:</span>
+                        <span id="connection-status" class="status-warning">Checking...</span>
+                    </div>
+                </div>
+                <div class="trade-toggle-container" style="margin-top: 20px; text-align: center; border-top: 1px solid var(--border); padding-top: 15px;">
+                    <button id="toggle-trading" class="scan-btn" style="background: var(--status-danger); transition: all 0.3s ease;">
+                        <i class="fas fa-power-off"></i> ENABLE LIVE TRADING
+                    </button>
+                    <p style="font-size: 0.8em; margin-top: 8px; color: var(--text-dim);">
+                        Current Status: <strong id="trading-mode">READ-ONLY</strong>
+                    </p>
+                </div>
+            </section>
+
             <!-- Bot Performance Card -->
             <section class="card" id="bot-performance">
                 <div class="card-title">

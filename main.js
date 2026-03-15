@@ -99,6 +99,60 @@ function detectFVG(klines) {
 
 // ... (calculateEMA and calculatePOC stay the same)
 
+// Local Bridge Support
+const BRIDGE_BASE = 'http://localhost:3000';
+
+async function updateLiveStatus() {
+    try {
+        const [balanceRes, stateRes] = await Promise.all([
+            fetch(`${BRIDGE_BASE}/balance`).then(r => r.json()),
+            fetch(`${BRIDGE_BASE}/state`).then(r => r.json())
+        ]);
+
+        document.getElementById('bitvavo-balance').textContent = `${balanceRes.bitvavo?.toFixed(2) || '0.00'} EUR`;
+        document.getElementById('btcc-balance').textContent = `${balanceRes.btcc?.toFixed(2) || '0.00'} USDT`;
+        
+        const statusEl = document.getElementById('connection-status');
+        statusEl.textContent = balanceRes.status === 'REACHABLE' ? 'CONNECTED' : 'PARTIAL ERROR';
+        statusEl.className = balanceRes.status === 'REACHABLE' ? 'status-success' : 'status-danger';
+
+        const modeEl = document.getElementById('trading-mode');
+        const toggleBtn = document.getElementById('toggle-trading');
+        
+        if (stateRes.autoTrade) {
+            modeEl.textContent = 'LIVE TRADING';
+            modeEl.style.color = 'var(--danger)';
+            toggleBtn.innerHTML = '<i class="fas fa-stop"></i> DISABLE LIVE TRADING';
+            toggleBtn.style.background = 'var(--danger)';
+        } else {
+            modeEl.textContent = 'READ-ONLY';
+            modeEl.style.color = 'var(--text-secondary)';
+            toggleBtn.innerHTML = '<i class="fas fa-power-off"></i> ENABLE LIVE TRADING';
+            toggleBtn.style.background = 'var(--success)';
+        }
+    } catch (e) {
+        console.warn('Bridge not connected. Start bridge.js to see live balances.');
+    }
+}
+
+// Initial pull and periodic refresh
+updateLiveStatus();
+setInterval(updateLiveStatus, 15000);
+
+document.getElementById('toggle-trading')?.addEventListener('click', async () => {
+    const isLive = document.getElementById('trading-mode').textContent === 'LIVE TRADING';
+    const confirmMsg = isLive ? 'Disable live trading?' : 'WARNING: This will enable real trades on your account. Are you sure?';
+    
+    if (confirm(confirmMsg)) {
+        await fetch(`${BRIDGE_BASE}/toggle`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: !isLive })
+        });
+        updateLiveStatus();
+    }
+});
+
 // Signal Intelligence Center
 document.getElementById('scan-now').addEventListener('click', async () => {
     const symbolPair = document.getElementById('symbol-select').value.replace('/', '');
