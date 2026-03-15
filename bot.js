@@ -67,10 +67,11 @@ async function runLiveBot() {
             if (fvg === 'BULLISH') { signal = 'BUY (Trend Gap)'; confidence = 'HIGH'; }
             if (fvg === 'BEARISH') { signal = 'SELL (Trend Gap)'; confidence = 'HIGH'; }
         } else {
+            // Deep Alpha Grid Logic
             const rangeLow = Math.min(...data.slice(-20).map(d => d.low));
             const rangeHigh = Math.max(...data.slice(-20).map(d => d.high));
-            if (currentPrice <= rangeLow * 1.002) signal = 'BUY (Range Sweep)';
-            if (currentPrice >= rangeHigh * 0.998) signal = 'SELL (Range Sweep)';
+            if (currentPrice < rangeLow + (rangeHigh - rangeLow) * 0.25) signal = 'BUY (Deep Alpha Grid)';
+            if (currentPrice > rangeHigh - (rangeHigh - rangeLow) * 0.25) signal = 'SELL (Deep Alpha Grid)';
         }
 
         if (signal !== 'WAIT') {

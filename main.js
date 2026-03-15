@@ -133,14 +133,15 @@ document.getElementById('scan-now').addEventListener('click', async () => {
                  signalColor = 'status-danger';
             }
         } else {
+            // Deep Alpha Grid Logic
             const rangeLow = Math.min(...klines.slice(-20).map(k => parseFloat(k[3])));
             const rangeHigh = Math.max(...klines.slice(-20).map(k => parseFloat(k[2])));
             
-            if (currentPrice <= rangeLow * 1.002) {
-                signal = 'LONG (SMC Sweep Buy)';
+            if (currentPrice < rangeLow + (rangeHigh - rangeLow) * 0.25) {
+                signal = 'LONG (Deep Alpha Grid)';
                 signalColor = 'status-success';
-            } else if (currentPrice >= rangeHigh * 0.998) {
-                signal = 'SHORT (SMC Sweep Sell)';
+            } else if (currentPrice > rangeHigh - (rangeHigh - rangeLow) * 0.25) {
+                signal = 'SHORT (Deep Alpha Grid)';
                 signalColor = 'status-danger';
             }
         }
@@ -195,8 +196,8 @@ document.getElementById('portfolio-scan')?.addEventListener('click', async () =>
             } else {
                 const rangeLow = Math.min(...klines.slice(-20).map(k => parseFloat(k[3])));
                 const rangeHigh = Math.max(...klines.slice(-20).map(k => parseFloat(k[2])));
-                if (currentPrice <= rangeLow * 1.002) { signal = 'LONG (SMC)'; signalClass = 'status-success'; }
-                else if (currentPrice >= rangeHigh * 0.998) { signal = 'SHORT (SMC)'; signalClass = 'status-danger'; }
+                if (currentPrice < rangeLow + (rangeHigh - rangeLow) * 0.25) { signal = 'LONG (Grid)'; signalClass = 'status-success'; }
+                else if (currentPrice > rangeHigh - (rangeHigh - rangeLow) * 0.25) { signal = 'SHORT (Grid)'; signalClass = 'status-danger'; }
             }
 
             const row = document.createElement('tr');

@@ -51,7 +51,10 @@ function calculateADX(data, period) {
     const diP = sdmP.map((v, i) => 100 * v / atr[i]), diM = sdmM.map((v, i) => 100 * v / atr[i]);
     const dx = diP.map((v, i) => 100 * Math.abs(v - diM[i]) / (v + diM[i]));
     const adx = smooth(dx, period);
-    return new Array(data.length - adx.length).fill(null).concat(adx);
+    return {
+        adx: new Array(data.length - adx.length).fill(null).concat(adx),
+        atr: new Array(data.length - atr.length).fill(null).concat(atr)
+    };
 }
 
 function calculatePOC(data) {
@@ -74,7 +77,7 @@ function detectFVG(data, i) {
 }
 
 async function runPortfolioSimulation() {
-    console.log(`\n=== PORTFOLIO ALPHA ENGINE [MULTI-COIN] ===`);
+    console.log(`\n=== DEEP ALPHA ENGINE [MULTI-COIN] ===`);
     console.log(`Starting Capital: $${START_CAPITAL} | Allocation: $${ALLOCATION_PER_TRADE}/trade`);
     
     let balance = START_CAPITAL;
@@ -87,33 +90,37 @@ async function runPortfolioSimulation() {
         if (!data) continue;
         symbolsProcessed++;
 
-        const adx = calculateADX(data, ADX_PERIOD);
-        let coinBalance = ALLOCATION_PER_TRADE; // Local balance for this specific asset simulation
+        const { adx, atr } = calculateADX(data, ADX_PERIOD);
+        let coinBalance = ALLOCATION_PER_TRADE; 
         let position = null;
         let pnlForCoin = 0;
 
         for (let i = 50; i < data.length; i++) {
             const cand = data[i];
             const currentADX = adx[i];
-            if (currentADX === null) continue;
+            const currentATR = atr[i];
+            if (currentADX === null || currentATR === null) continue;
 
             const isTrending = currentADX > 25;
-            const lev = isTrending ? 20 : 5;
+            const lev = isTrending ? 20 : 10; // Boosted range leverage for Deep Alpha
             const poc = calculatePOC(data.slice(i-50, i));
 
             if (position) {
                 const change = (cand.close - position.entryPrice) / position.entryPrice;
                 const pnl = position.type === 'LONG' ? (coinBalance * change * lev) : (coinBalance * -change * lev);
 
-                if ((position.type === 'LONG' && change <= -(0.9/lev)) || (position.type === 'SHORT' && change >= (0.9/lev))) {
-                   pnlForCoin -= coinBalance; break; 
-                }
-
-                let shouldExit = isTrending ? 
-                    ((position.type === 'LONG' && cand.close < data[i-1].low) || (position.type === 'SHORT' && cand.close > data[i-1].high)) :
-                    ((position.type === 'LONG' && cand.close >= poc) || (position.type === 'SHORT' && cand.close <= poc));
-
-                if (shouldExit || Math.abs(change * lev) > 0.15) {
+                // ATR-based Dynamic Exit
+                const exitThreshold = isTrending ? (currentATR * 2 / cand.close) : (currentATR / cand.close);
+                
+                if ((position.type === 'LONG' && change <= -exitThreshold) || (position.type === 'SHORT' && change >= exitThreshold)) {
+                    pnlForCoin += pnl; 
+                    if (pnl > 0) totalWins++; else totalLosses++;
+                    position = null;
+                } else if (Math.abs(change) > exitThreshold * 1.5) {
+                    pnlForCoin += pnl;
+                    if (pnl > 0) totalWins++; else totalLosses++;
+                    position = null;
+                } else if (!isTrending && Math.abs(cand.close - poc) / poc < 0.001) {
                     pnlForCoin += pnl;
                     if (pnl > 0) totalWins++; else totalLosses++;
                     position = null;
@@ -121,23 +128,29 @@ async function runPortfolioSimulation() {
             } else {
                 if (isTrending) {
                     const fvg = detectFVG(data, i);
-                    if (fvg === 'BULLISH' && cand.close > data[i-1].close) position = { type: 'LONG', entryPrice: cand.close, strategy: 'TREND' };
-                    else if (fvg === 'BEARISH' && cand.close < data[i-1].close) position = { type: 'SHORT', entryPrice: cand.close, strategy: 'TREND' };
+                    if (fvg === 'BULLISH' && cand.close > data[i-1].close) position = { type: 'LONG', entryPrice: cand.close };
+                    else if (fvg === 'BEARISH' && cand.close < data[i-1].close) position = { type: 'SHORT', entryPrice: cand.close };
                 } else {
-                    const rangeLow = Math.min(...data.slice(i-20, i).map(d => d.low));
-                    const rangeHigh = Math.max(...data.slice(i-20, i).map(d => d.high));
-                    if (cand.low < rangeLow && cand.close > rangeLow) position = { type: 'LONG', entryPrice: cand.close, strategy: 'RANGE' };
-                    else if (cand.high > rangeHigh && cand.close < rangeHigh) position = { type: 'SHORT', entryPrice: cand.close, strategy: 'RANGE' };
+                    // Deep Alpha Grid Logic
+                    const window = data.slice(i-20, i);
+                    const rangeLow = Math.min(...window.map(d => d.low));
+                    const rangeHigh = Math.max(...window.map(d => d.high));
+                    const rangeMid = (rangeHigh + rangeLow) / 2;
+                    
+                    // Signal: Grid buy near bottom quarter, Grid sell near top quarter
+                    if (cand.close < rangeLow + (rangeHigh - rangeLow) * 0.25) {
+                        position = { type: 'LONG', entryPrice: cand.close, strategy: 'GRID' };
+                    } else if (cand.close > rangeHigh - (rangeHigh - rangeLow) * 0.25) {
+                        position = { type: 'SHORT', entryPrice: cand.close, strategy: 'GRID' };
+                    }
                 }
             }
         }
         balance += pnlForCoin;
-        portfolioHistory.push({ symbol, pnl: pnlForCoin.toFixed(2) });
         console.log(`- ${symbol}: ${pnlForCoin >= 0 ? '+' : ''}${pnlForCoin.toFixed(2)} USD`);
     }
 
     console.log(`\n================ SUMMARY ================`);
-    console.log(`Coins Scanned: ${symbolsProcessed}`);
     console.log(`Final Portfolio Balance: $${balance.toFixed(2)}`);
     console.log(`Total ROI: ${(((balance - START_CAPITAL)/START_CAPITAL)*100).toFixed(2)}%`);
     console.log(`Activity: ${totalWins} Wins / ${totalLosses} Losses`);
