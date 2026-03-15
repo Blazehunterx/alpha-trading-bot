@@ -228,6 +228,68 @@ button:hover {
     color: #fff;
 }
 
+
+/* Activity Feed Styles */
+.activity-container {
+    padding: 0.5rem;
+}
+
+.activity-empty {
+    text-align: center;
+    color: var(--text-secondary);
+    padding: 2rem;
+    font-size: 0.9rem;
+    border: 1px dashed var(--glass-border);
+    border-radius: 16px;
+}
+
+.activity-item {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    animation: slideIn 0.3s ease-out;
+}
+
+.activity-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.activity-header .symbol {
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.activity-header .signal {
+    font-size: 0.8rem;
+    font-weight: 800;
+}
+
+.activity-details {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.activity-time {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    text-align: right;
+}
+
+@keyframes slideIn {
+    from { opacity: 0; transform: translateX(-10px); }
+    to { opacity: 1; transform: translateX(0); }
+}
+
 @media (max-width: 768px) {
   .app-container { padding: 1rem; }
   h1 { font-size: 2rem; }

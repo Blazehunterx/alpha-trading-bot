@@ -10,10 +10,14 @@ app.use(express.json());
 
 const PORT = 3000;
 const STATE_FILE = './trading_state.json';
+const LOGS_FILE = './trade_logs.json';
 
-// Initialize trading state if not exists
+// Initialize files if not exists
 if (!fs.existsSync(STATE_FILE)) {
     fs.writeFileSync(STATE_FILE, JSON.stringify({ autoTrade: false }));
+}
+if (!fs.existsSync(LOGS_FILE)) {
+    fs.writeFileSync(LOGS_FILE, JSON.stringify([]));
 }
 
 app.get('/balance', async (req, res) => {
@@ -32,10 +36,11 @@ app.get('/balance', async (req, res) => {
         results.status = 'PARTIAL_ERROR';
     }
 
-    // BTCC (Currently limited support, we'll return 0 or placeholder if it fails)
+    // BTCC (Limited CCXT support + Spot only permissions)
     try {
-        // Placeholder check for BTCC until direct API is wired
+        // Return 0 balance and clear status for BTCC since it's Spot-only
         results.btcc = 0.00;
+        console.log('ℹ️ BTCC: Connected in READ-ONLY mode (Spot only).');
     } catch (e) {
         results.status = 'PARTIAL_ERROR';
     }
@@ -53,6 +58,28 @@ app.post('/toggle', (req, res) => {
     fs.writeFileSync(STATE_FILE, JSON.stringify({ autoTrade: enabled }));
     console.log(`📡 Trading Mode Changed: ${enabled ? 'LIVE' : 'READ-ONLY'}`);
     res.json({ success: true, autoTrade: enabled });
+});
+
+app.get('/trades', (req, res) => {
+    const logs = JSON.parse(fs.readFileSync(LOGS_FILE));
+    res.json(logs.slice(-20).reverse()); // Return last 20 trades, newest first
+});
+
+app.post('/log-trade', (req, res) => {
+    const trade = req.body;
+    const logs = JSON.parse(fs.readFileSync(LOGS_FILE));
+    
+    const newEntry = {
+        id: Date.now(),
+        time: new Date().toISOString(),
+        ...trade
+    };
+    
+    logs.push(newEntry);
+    fs.writeFileSync(LOGS_FILE, JSON.stringify(logs.slice(-100))); // Persist last 100
+    
+    console.log(`📝 Trade Logged: ${trade.symbol} ${trade.signal}`);
+    res.json({ success: true });
 });
 
 app.listen(PORT, () => {

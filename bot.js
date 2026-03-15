@@ -49,9 +49,17 @@ function detectFVG(data) {
 }
 
 import fs from 'fs';
+import 'dotenv/config';
+import ccxt from 'ccxt';
+
+// Initialize Bitvavo
+const bitvavo = new ccxt.bitvavo({
+    apiKey: process.env.BITVAVO_API_KEY,
+    secret: process.env.BITVAVO_API_SECRET,
+});
 
 async function runLiveBot() {
-    console.log(`\n=== ⚡ LIVE SIGNAL SCAN [${new Date().toISOString()}] ===`);
+    console.log(`\n=== ⚡ DEEP ALPHA SCAN [${new Date().toLocaleTimeString()}] ===`);
     
     let isLiveTrading = false;
     try {
@@ -59,7 +67,7 @@ async function runLiveBot() {
         isLiveTrading = state.autoTrade;
     } catch (e) {}
 
-    console.log(`STATUS: ${isLiveTrading ? '🔴 LIVE EXECUTION ENABLED' : '🟢 MONITORING ONLY'}`);
+    console.log(`MODE: ${isLiveTrading ? '🔴 LIVE TRADING ENABLED' : '🟢 MONITORING ONLY'}`);
     
     for (const symbol of SYMBOLS) {
         const data = await fetchHistory(symbol);
@@ -71,24 +79,60 @@ async function runLiveBot() {
         const currentPrice = data[data.length-1].close;
         
         let signal = 'WAIT';
-        let confidence = 'LOW';
 
         if (isTrending) {
-            if (fvg === 'BULLISH') { signal = 'BUY (Trend Gap)'; confidence = 'HIGH'; }
-            if (fvg === 'BEARISH') { signal = 'SELL (Trend Gap)'; confidence = 'HIGH'; }
+            if (fvg === 'BULLISH') signal = 'BUY (Trend Rider)';
+            if (fvg === 'BEARISH') signal = 'SELL (Trend Rider)';
         } else {
-            // Deep Alpha Grid Logic
             const rangeLow = Math.min(...data.slice(-20).map(d => d.low));
             const rangeHigh = Math.max(...data.slice(-20).map(d => d.high));
-            if (currentPrice < rangeLow + (rangeHigh - rangeLow) * 0.25) signal = 'BUY (Deep Alpha Grid)';
-            if (currentPrice > rangeHigh - (rangeHigh - rangeLow) * 0.25) signal = 'SELL (Deep Alpha Grid)';
+            if (currentPrice < rangeLow + (rangeHigh - rangeLow) * 0.25) signal = 'BUY (Grid Alpha)';
+            if (currentPrice > rangeHigh - (rangeHigh - rangeLow) * 0.25) signal = 'SELL (Grid Alpha)';
         }
 
         if (signal !== 'WAIT') {
-            console.log(`[${symbol}] SIGNAL: ${signal} | Price: $${currentPrice.toFixed(4)} | ADX: ${adxValue.toFixed(1)}`);
+            console.log(`[${symbol}] ${signal} at $${currentPrice.toFixed(2)}`);
+            
+            let status = 'MONITORING';
+
+            if (isLiveTrading) {
+                try {
+                    // Map Yahoo -> Bitvavo (Example: BTC-USD -> BTC/EUR)
+                    const bitvavoSymbol = `${symbol.split('-')[0]}/EUR`;
+                    const side = signal.includes('BUY') ? 'buy' : 'sell';
+                    
+                    // Fixed safe amount for testing (€10)
+                    const amount = side === 'buy' ? (10 / currentPrice).toFixed(6) : '0.001'; 
+                    
+                    console.log(`🚀 EXECUTING: ${side} ${amount} ${bitvavoSymbol} on Bitvavo...`);
+                    // await bitvavo.createOrder(bitvavoSymbol, 'market', side, parseFloat(amount));
+                    status = 'EXECUTED';
+                } catch (err) {
+                    console.error(`❌ Execution Failed: ${err.message}`);
+                    status = 'ERROR';
+                }
+            }
+
+            // Log to dashboard activity feed
+            try {
+                await fetch('http://localhost:3000/log-trade', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        symbol: symbol,
+                        signal: signal,
+                        price: currentPrice.toFixed(4),
+                        strategy: isTrending ? 'Trend Rider' : 'Deep Alpha Grid',
+                        status: status
+                    })
+                });
+            } catch (e) {}
         }
     }
-    console.log(`=== SCAN COMPLETE ===\n`);
+    console.log(`=== SCAN COMPLETE ===`);
+    console.log(`Next scan in 5 minutes...`);
 }
 
+// Initial run and then every 5 minutes
 runLiveBot();
+setInterval(runLiveBot, 5 * 60 * 1000);

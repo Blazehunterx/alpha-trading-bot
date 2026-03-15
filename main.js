@@ -102,6 +102,35 @@ function detectFVG(klines) {
 // Local Bridge Support
 const BRIDGE_BASE = 'http://localhost:3000';
 
+async function updateTradeActivity() {
+    try {
+        const trades = await fetch(`${BRIDGE_BASE}/trades`).then(r => r.json());
+        const listEl = document.getElementById('activity-list');
+        
+        if (!trades || trades.length === 0) {
+            listEl.innerHTML = '<div class="activity-empty">Waiting for bot signals...</div>';
+            return;
+        }
+
+        listEl.innerHTML = trades.map(t => `
+            <div class="activity-item">
+                <div class="activity-header">
+                    <span class="symbol">${t.symbol}</span>
+                    <span class="signal ${t.signal.includes('BUY') || t.signal.includes('LONG') ? 'status-success' : 'status-danger'}">${t.signal}</span>
+                </div>
+                <div class="activity-details">
+                    <span>$${t.price}</span>
+                    <span>${t.strategy}</span>
+                    <span class="badge" style="background: ${t.status === 'EXECUTED' ? 'var(--danger)' : 'var(--success)'}; font-size: 0.6em;">${t.status}</span>
+                </div>
+                <div class="activity-time">${new Date(t.time).toLocaleTimeString()}</div>
+            </div>
+        `).join('');
+    } catch (e) {
+        console.warn('Failed to fetch trades.');
+    }
+}
+
 async function updateLiveStatus() {
     try {
         const [balanceRes, stateRes] = await Promise.all([
@@ -130,6 +159,9 @@ async function updateLiveStatus() {
             toggleBtn.innerHTML = '<i class="fas fa-power-off"></i> ENABLE LIVE TRADING';
             toggleBtn.style.background = 'var(--success)';
         }
+
+        // Also update trade activity
+        updateTradeActivity();
     } catch (e) {
         console.warn('Bridge not connected. Start bridge.js to see live balances.');
     }
