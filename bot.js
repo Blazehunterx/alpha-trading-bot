@@ -48,6 +48,27 @@ function detectFVG(data) {
     return null;
 }
 
+function calculateWilliamsR(data, period = 14) {
+    if (data.length < period) return -50;
+    const subset = data.slice(-period);
+    const hh = Math.max(...subset.map(d => d.high));
+    const ll = Math.min(...subset.map(d => d.low));
+    const close = data[data.length - 1].close;
+    return ((hh - close) / (hh - ll)) * -100;
+}
+
+function detectWilliamsBreakout(data, k = 0.6) {
+    const i = data.length - 1;
+    if (i < 1) return null;
+    const prevRange = data[i-1].high - data[i-1].low;
+    const triggerPrice = data[i-1].close + (prevRange * k);
+    const stopPrice = data[i-1].close - (prevRange * k);
+    
+    if (data[i].close > triggerPrice) return 'BULLISH_BREAKOUT';
+    if (data[i].close < stopPrice) return 'BEARISH_BREAKOUT';
+    return null;
+}
+
 import fs from 'fs';
 import 'dotenv/config';
 import ccxt from 'ccxt';
@@ -59,7 +80,7 @@ const bitvavo = new ccxt.bitvavo({
 });
 
 async function runLiveBot() {
-    console.log(`\n=== ⚡ DEEP ALPHA SCAN [${new Date().toLocaleTimeString()}] ===`);
+    console.log(`\n=== 🧪 PRO ALPHA SCAN [${new Date().toLocaleTimeString()}] ===`);
     
     let isLiveTrading = false;
     try {
@@ -69,44 +90,71 @@ async function runLiveBot() {
 
     console.log(`MODE: ${isLiveTrading ? '🔴 LIVE TRADING ENABLED' : '🟢 MONITORING ONLY'}`);
     
+    // Fetch real balance if live
+    let availableBalance = 20.0;
+    if (isLiveTrading) {
+        try {
+            const bal = await bitvavo.fetchBalance();
+            availableBalance = bal.total['EUR'] || 0;
+            console.log(`💰 Real Balance: ${availableBalance.toFixed(2)} EUR`);
+        } catch (e) {
+            console.error('Failed to fetch real balance, using safety default.');
+        }
+    }
+
     for (const symbol of SYMBOLS) {
         const data = await fetchHistory(symbol);
         if (!data || data.length < 50) continue;
 
         const adxValue = calculateADX(data, ADX_PERIOD);
         const fvg = detectFVG(data);
-        const isTrending = adxValue > 25;
+        const wR = calculateWilliamsR(data);
+        const larryBreakout = detectWilliamsBreakout(data);
         const currentPrice = data[data.length-1].close;
         
         let signal = 'WAIT';
+        let strategy = 'None';
 
-        if (isTrending) {
-            if (fvg === 'BULLISH') signal = 'BUY (Trend Rider)';
-            if (fvg === 'BEARISH') signal = 'SELL (Trend Rider)';
-        } else {
-            const rangeLow = Math.min(...data.slice(-20).map(d => d.low));
-            const rangeHigh = Math.max(...data.slice(-20).map(d => d.high));
-            if (currentPrice < rangeLow + (rangeHigh - rangeLow) * 0.25) signal = 'BUY (Grid Alpha)';
-            if (currentPrice > rangeHigh - (rangeHigh - rangeLow) * 0.25) signal = 'SELL (Grid Alpha)';
+        // 1. Larry Williams Volatility Breakout (Aggressive Trend)
+        if (larryBreakout === 'BULLISH_BREAKOUT' && adxValue > 20) {
+            signal = 'BUY (Williams Breakout)';
+            strategy = 'Williams Pro';
+        } else if (larryBreakout === 'BEARISH_BREAKOUT' && adxValue > 20) {
+            signal = 'SELL (Williams Breakout)';
+            strategy = 'Williams Pro';
+        }
+        // 2. Mean Reversion (Grid) if Oversold/Overbought
+        else if (adxValue < 20) {
+            if (wR < -80) { signal = 'BUY (Williams Oversold)'; strategy = 'Grid Alpha'; }
+            if (wR > -20) { signal = 'SELL (Williams Overbought)'; strategy = 'Grid Alpha'; }
         }
 
         if (signal !== 'WAIT') {
-            console.log(`[${symbol}] ${signal} at $${currentPrice.toFixed(2)}`);
+            console.log(`[${symbol}] ${signal} at $${currentPrice.toFixed(4)} | wR: ${wR.toFixed(1)}`);
             
             let status = 'MONITORING';
 
-            if (isLiveTrading) {
+            if (isLiveTrading && availableBalance >= 5) {
                 try {
-                    // Map Yahoo -> Bitvavo (Example: BTC-USD -> BTC/EUR)
                     const bitvavoSymbol = `${symbol.split('-')[0]}/EUR`;
                     const side = signal.includes('BUY') ? 'buy' : 'sell';
                     
-                    // Fixed safe amount for testing (€10)
-                    const amount = side === 'buy' ? (10 / currentPrice).toFixed(6) : '0.001'; 
+                    // Use 95% of balance if under 25 EUR to meet exchange minimums (typically 5-10 EUR)
+                    const tradeValue = availableBalance < 25 ? availableBalance * 0.95 : availableBalance * 0.5;
+                    const amount = (tradeValue / currentPrice).toFixed(6); 
                     
-                    console.log(`🚀 EXECUTING: ${side} ${amount} ${bitvavoSymbol} on Bitvavo...`);
-                    // await bitvavo.createOrder(bitvavoSymbol, 'market', side, parseFloat(amount));
-                    status = 'EXECUTED';
+                    if (tradeValue < 5) {
+                        console.log(`⚠️ Balance too low for minimum order (€${tradeValue.toFixed(2)})`);
+                        status = 'INSUFFICIENT_FUNDS';
+                    } else {
+                        console.log(`🚀 EXECUTING: ${side} ${amount} ${bitvavoSymbol} on Bitvavo Pro...`);
+                        
+                        bitvavo.options['operatorId'] = 1773573000;
+                        const order = await bitvavo.createOrder(bitvavoSymbol, 'market', side, parseFloat(amount));
+                        console.log(`✅ Order Placed: ID ${order.id}`);
+                        status = 'EXECUTED';
+                        availableBalance -= tradeValue;
+                    }
                 } catch (err) {
                     console.error(`❌ Execution Failed: ${err.message}`);
                     status = 'ERROR';
@@ -122,7 +170,7 @@ async function runLiveBot() {
                         symbol: symbol,
                         signal: signal,
                         price: currentPrice.toFixed(4),
-                        strategy: isTrending ? 'Trend Rider' : 'Deep Alpha Grid',
+                        strategy: strategy,
                         status: status
                     })
                 });
@@ -130,7 +178,6 @@ async function runLiveBot() {
         }
     }
     console.log(`=== SCAN COMPLETE ===`);
-    console.log(`Next scan in 5 minutes...`);
 }
 
 // Initial run and then every 5 minutes
