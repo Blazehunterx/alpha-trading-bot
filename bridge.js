@@ -11,6 +11,18 @@ app.use(express.json());
 const PORT = 3000;
 const STATE_FILE = './trading_state.json';
 const LOGS_FILE = './trade_logs.json';
+const POSITIONS_FILE = './positions.json';
+
+// Exchanges
+const bitvavo = new ccxt.bitvavo({
+    apiKey: process.env.BITVAVO_API_KEY,
+    secret: process.env.BITVAVO_API_SECRET,
+});
+
+const krakenFutures = new ccxt.krakenfutures({
+    apiKey: process.env.KRAKEN_API_KEY,
+    secret: process.env.KRAKEN_API_SECRET,
+});
 
 // Initialize files if not exists
 if (!fs.existsSync(STATE_FILE)) {
@@ -19,30 +31,24 @@ if (!fs.existsSync(STATE_FILE)) {
 if (!fs.existsSync(LOGS_FILE)) {
     fs.writeFileSync(LOGS_FILE, JSON.stringify([]));
 }
+if (!fs.existsSync(POSITIONS_FILE)) {
+    fs.writeFileSync(POSITIONS_FILE, JSON.stringify([]));
+}
 
 app.get('/balance', async (req, res) => {
-    const results = { bitvavo: null, btcc: null, status: 'REACHABLE' };
+    const results = { bitvavo: null, kraken: null, status: 'REACHABLE' };
 
-    // Bitvavo
     try {
-        const bitvavo = new ccxt.bitvavo({
-            apiKey: process.env.BITVAVO_API_KEY,
-            secret: process.env.BITVAVO_API_SECRET,
-        });
-        const bal = await bitvavo.fetchBalance();
-        results.bitvavo = bal.total['EUR'] || 0;
+        const [bitBal, kfBal] = await Promise.all([
+            bitvavo.fetchBalance().catch(() => ({ total: { EUR: 0 } })),
+            krakenFutures.fetchBalance().catch(() => ({ total: { USD: 0 } }))
+        ]);
+        
+        results.bitvavo = bitBal.total['EUR'] || 0;
+        results.kraken = kfBal.total['USD'] || 0;
     } catch (e) {
-        console.error('Bitvavo Error:', e.message);
-        results.status = 'PARTIAL_ERROR';
-    }
-
-    // BTCC (Limited CCXT support + Spot only permissions)
-    try {
-        // Return 0 balance and clear status for BTCC since it's Spot-only
-        results.btcc = 0.00;
-        console.log('ℹ️ BTCC: Connected in READ-ONLY mode (Spot only).');
-    } catch (e) {
-        results.status = 'PARTIAL_ERROR';
+        console.error('Balance Error:', e.message);
+        results.status = 'ERROR';
     }
 
     res.json(results);
@@ -78,8 +84,13 @@ app.post('/log-trade', (req, res) => {
     logs.push(newEntry);
     fs.writeFileSync(LOGS_FILE, JSON.stringify(logs.slice(-100))); // Persist last 100
     
-    console.log(`📝 Trade Logged: ${trade.symbol} ${trade.signal}`);
+    console.log(`📝 Trade Logged: ${trade.symbol} ${trade.signal} [${trade.status}]`);
     res.json({ success: true });
+});
+
+app.get('/positions', (req, res) => {
+    const positions = JSON.parse(fs.readFileSync(POSITIONS_FILE));
+    res.json(positions);
 });
 
 app.listen(PORT, () => {
