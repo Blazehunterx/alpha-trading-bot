@@ -1,1 +1,42 @@
-[{"symbol":"BTC-USD","exchange":"bitvavo","amount":0.000285,"entry":73640,"tp":75112,"sl":72167,"time":1773636835085,"side":"buy","leverage":1,"breakevenShieldTriggered":false},{"symbol":"ETH-USD","exchange":"kraken","side":"buy","amount":0.013,"entry":2269.2880859375,"leverage":5,"tp":2291.9809667968752,"sl":2252.268425292969,"time":1773638990971,"breakevenShieldTriggered":false},{"symbol":"SOL-USD","exchange":"kraken","side":"buy","amount":0.33,"entry":93.92655181884766,"leverage":5,"tp":94.86581733703613,"sl":93.2221026802063,"time":1773638992266,"breakevenShieldTriggered":false},{"symbol":"AVAX-USD","exchange":"kraken","side":"buy","amount":5.97,"entry":10.217574119567871,"leverage":5,"tp":10.31974986076355,"sl":10.140942313671113,"time":1773657629788}]
+[
+  {
+    "symbol": "XRP-USD",
+    "exchange": "kraken",
+    "side": "buy",
+    "amount": 29,
+    "entry": 1.46891,
+    "tp": 1.583,
+    "sl": 1.547,
+    "time": 1773718596283
+  },
+  {
+    "symbol": "AVAX-USD",
+    "exchange": "kraken",
+    "side": "buy",
+    "amount": 5.97,
+    "entry": 10.214,
+    "tp": 10.518,
+    "sl": 10.257,
+    "time": 1773718596283
+  },
+  {
+    "symbol": "ETH-USD",
+    "exchange": "kraken",
+    "side": "buy",
+    "amount": 0.013,
+    "entry": 2269.3,
+    "tp": 2362.4,
+    "sl": 2303.4,
+    "time": 1773718596283
+  },
+  {
+    "symbol": "ADA-USD",
+    "exchange": "kraken",
+    "side": "buy",
+    "amount": 149,
+    "entry": 0.2859,
+    "tp": 0.2912,
+    "sl": 0.2839,
+    "time": 1773718596283
+  }
+]

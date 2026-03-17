@@ -1,25 +1,42 @@
 import axios from 'axios';
-const YAHOO_BASE = 'https://query1.finance.yahoo.com/v8/finance/chart';
+import fs from 'fs';
+import 'dotenv/config';
+import ccxt from 'ccxt';
 
+const YAHOO_BASE = 'https://query1.finance.yahoo.com/v8/finance/chart';
 const ADX_PERIOD = 14;
 const SYMBOLS = [
     'BTC-USD', 'ETH-USD', 'SOL-USD', 'XRP-USD', 'ADA-USD', 
-    'DOGE-USD', 'AVAX-USD', 'LINK-USD', 'SHIB-USD', 'PEPE2-USD'
+    'DOGE-USD', 'AVAX-USD', 'LINK-USD', 'SHIB-USD', 'PEPE2-USD',
+    'MATIC-USD', 'DOT-USD', 'LTC-USD', 'BCH-USD', 'UNI-USD',
+    'RENDER-USD', 'SUI-USD', 'APT-USD', 'TIA-USD', 'INJ-USD'
 ];
 
+const POSITIONS_FILE = './positions.json';
+const LOG_FILE = './trade_activity.log';
+
+// --- Exchange Initialization ---
+const bitvavo = new ccxt.bitvavo({ apiKey: process.env.BITVAVO_API_KEY, secret: process.env.BITVAVO_API_SECRET });
+const krakenFutures = new ccxt.krakenfutures({ apiKey: process.env.KRAKEN_API_KEY, secret: process.env.KRAKEN_API_SECRET });
+
+function log(msg) {
+    const t = new Date().toLocaleString();
+    const line = `[${t}] ${msg}\n`;
+    console.log(line.trim());
+    fs.appendFileSync(LOG_FILE, line);
+}
+
+// --- Technical Indicators ---
 async function fetchHistory(symbol) {
     try {
         const response = await axios.get(`${YAHOO_BASE}/${symbol}?interval=5m&range=1d`);
         const result = response.data.chart.result[0];
         const quotes = result.indicators.quote[0];
         const timestamps = result.timestamp;
-        
         return timestamps.map((ts, i) => ({
             time: ts, open: quotes.open[i], high: quotes.high[i], low: quotes.low[i], close: quotes.close[i], volume: quotes.volume[i]
         })).filter(d => d.close !== null);
-    } catch (e) {
-        return null;
-    }
+    } catch (e) { return null; }
 }
 
 function calculateADX(data, period) {
@@ -40,33 +57,12 @@ function calculateADX(data, period) {
     return 100 * Math.abs(diP - diM) / (diP + diM);
 }
 
-function detectFVG(data) {
-    const i = data.length - 1;
-    if (i < 2) return null;
-    if (data[i].low > data[i-2].high) return 'BULLISH';
-    if (data[i].high < data[i-2].low) return 'BEARISH';
-    return null;
-}
-
 function calculateWilliamsR(data, period = 14) {
     if (data.length < period) return -50;
     const subset = data.slice(-period);
     const hh = Math.max(...subset.map(d => d.high));
     const ll = Math.min(...subset.map(d => d.low));
-    const close = data[data.length - 1].close;
-    return ((hh - close) / (hh - ll)) * -100;
-}
-
-function detectWilliamsBreakout(data, k = 0.6) {
-    const i = data.length - 1;
-    if (i < 1) return null;
-    const prevRange = data[i-1].high - data[i-1].low;
-    const triggerPrice = data[i-1].close + (prevRange * k);
-    const stopPrice = data[i-1].close - (prevRange * k);
-    
-    if (data[i].close > triggerPrice) return 'BULLISH_BREAKOUT';
-    if (data[i].close < stopPrice) return 'BEARISH_BREAKOUT';
-    return null;
+    return ((hh - data[data.length-1].close) / (hh - ll)) * -100;
 }
 
 function calculateRSI(data, period = 14) {
@@ -82,8 +78,7 @@ function calculateRSI(data, period = 14) {
         avgGain = (avgGain * (period - 1) + (diff > 0 ? diff : 0)) / period;
         avgLoss = (avgLoss * (period - 1) + (diff < 0 ? -diff : 0)) / period;
     }
-    if (avgLoss === 0) return 100;
-    return 100 - (100 / (1 + avgGain / avgLoss));
+    return avgLoss === 0 ? 100 : 100 - (100 / (1 + avgGain / avgLoss));
 }
 
 function calculateBollingerBands(data, period = 20, stdDev = 2) {
@@ -102,350 +97,158 @@ function detectOrderBlock(data) {
     const prev3 = data.slice(-6, -3);
     const isBullReversal = last3.every(c => c.close > c.open) && prev3.every(c => c.close < c.open);
     const isBearReversal = last3.every(c => c.close < c.open) && prev3.every(c => c.close > c.open);
-    if (isBullReversal) return 'BULL_OB';
-    if (isBearReversal) return 'BEAR_OB';
-    return null;
+    return isBullReversal ? 'BULL_OB' : (isBearReversal ? 'BEAR_OB' : null);
 }
 
 function calculateVolumeProfile(data) {
     const bins = {};
-    const binSize = (Math.max(...data.map(d => d.high)) - Math.min(...data.map(d => d.low))) / 20;
+    const prices = data.map(d => d.close);
+    const min = Math.min(...prices), max = Math.max(...prices);
+    const binSize = (max - min) / 20 || 0.0001;
     data.forEach(d => {
         const bin = Math.floor(d.close / binSize) * binSize;
         bins[bin] = (bins[bin] || 0) + d.volume;
     });
-    const hvn = Object.keys(bins).reduce((a, b) => bins[a] > bins[b] ? a : b);
-    return parseFloat(hvn);
-}
-
-function isHighVolatilitySession() {
-    const hour = new Date().getUTCHours();
-    // London: 8-16 UTC, New York: 13-21 UTC
-    return (hour >= 8 && hour <= 21);
-}
-
-function checkCorrelation(symbol, activePositions) {
-    const correlationGroups = {
-        'MAJOR': ['BTC-USD', 'ETH-USD', 'SOL-USD'],
-        'MEME': ['DOGE-USD', 'SHIB-USD', 'PEPE2-USD'],
-        'ALT': ['ADA-USD', 'XRP-USD', 'AVAX-USD', 'LINK-USD']
-    };
-    const group = Object.keys(correlationGroups).find(g => correlationGroups[g].includes(symbol));
-    if (!group) return true;
-    const count = activePositions.filter(p => correlationGroups[group].includes(p.symbol)).length;
-    return count < 2; // Allow max 2 per group
+    return parseFloat(Object.keys(bins).reduce((a, b) => bins[a] > bins[b] ? a : b));
 }
 
 async function getFundingRate(symbol) {
     try {
-        if (!symbol.includes('-USD')) return 0;
         const kSymbol = symbol.split('-')[0] + '/USD:USD';
         const funding = await krakenFutures.fetchFundingRate(kSymbol);
         return funding.fundingRate || 0;
     } catch (e) { return 0; }
 }
 
-import fs from 'fs';
-import 'dotenv/config';
-import ccxt from 'ccxt';
-
-// Initialize Exchanges
-const bitvavo = new ccxt.bitvavo({
-    apiKey: process.env.BITVAVO_API_KEY,
-    secret: process.env.BITVAVO_API_SECRET,
-});
-
-const krakenFutures = new ccxt.krakenfutures({
-    apiKey: process.env.KRAKEN_API_KEY,
-    secret: process.env.KRAKEN_API_SECRET,
-});
-
-// Global Error Handlers
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-});
-process.on('uncaughtException', (err) => {
-    console.error('Uncaught Exception:', err);
-});
-
-const POSITIONS_FILE = './positions.json';
-
-function loadPositions() {
-    try {
-        if (!fs.existsSync(POSITIONS_FILE)) return [];
-        return JSON.parse(fs.readFileSync(POSITIONS_FILE, 'utf8'));
-    } catch (e) { return []; }
+function checkCorrelation(symbol, activePositions) {
+    const groups = { 'MAJOR': ['BTC-USD', 'ETH-USD', 'SOL-USD'], 'MEME': ['DOGE-USD', 'SHIB-USD', 'PEPE2-USD'], 'ALT': ['ADA-USD', 'XRP-USD', 'AVAX-USD', 'LINK-USD', 'MATIC-USD', 'DOT-USD'] };
+    const group = Object.keys(groups).find(g => groups[g].includes(symbol));
+    return group ? activePositions.filter(p => groups[group].includes(p.symbol)).length < 3 : true;
 }
 
-function savePositions(positions) {
-    fs.writeFileSync(POSITIONS_FILE, JSON.stringify(positions));
-}
+// --- Core Logic ---
+function loadPositions() { try { return JSON.parse(fs.readFileSync(POSITIONS_FILE, 'utf8')); } catch (e) { return []; } }
+function savePositions(positions) { fs.writeFileSync(POSITIONS_FILE, JSON.stringify(positions, null, 2)); }
 
 async function runLiveBot() {
-    console.log(`\n=== 🧪 PRO ALPHA SCAN [${new Date().toLocaleTimeString()}] ===`);
-    
+    log(`--- 🦅 QUANT EAGLE V5: WALL STREET PROTOCOL ---`);
     let isLiveTrading = false;
-    try {
-        const state = JSON.parse(fs.readFileSync('./trading_state.json', 'utf8'));
-        isLiveTrading = state.autoTrade;
-    } catch (e) {}
+    try { isLiveTrading = JSON.parse(fs.readFileSync('./trading_state.json', 'utf8')).autoTrade; } catch (e) {}
 
-    console.log(`MODE: ${isLiveTrading ? '🔴 LIVE TRADING ENABLED' : '🟢 MONITORING ONLY'}`);
-    
     let positions = loadPositions();
-    let bitBalance = 0;
     let krakenBalance = 0;
+    let totalEquity = 0;
 
     if (isLiveTrading) {
         try {
-            const [bBal, kBal] = await Promise.all([
-                bitvavo.fetchBalance().catch(() => ({ total: { EUR: 0 } })),
-                krakenFutures.fetchBalance().catch(() => ({ total: { USD: 0 } }))
-            ]);
-            bitBalance = bBal.total['EUR'] || 0;
-            krakenBalance = kBal.free['USD'] || 0;
-            console.log(`💰 Balances -> Bitvavo: ${bitBalance.toFixed(2)} EUR | Kraken (F): ${krakenBalance.toFixed(2)} USD (Free)`);
-        } catch (e) {
-            console.error('Failed to fetch real balances.');
-        }
+            const kBal = await krakenFutures.fetchBalance();
+            krakenBalance = kBal.info?.accounts?.flex?.availableMargin || kBal.free['USD'] || 0;
+            totalEquity = kBal.info?.accounts?.flex?.marginEquity || kBal.total['USD'] || 0;
+            log(`Wallet -> Power: $${parseFloat(krakenBalance).toFixed(2)} | Equity: $${parseFloat(totalEquity).toFixed(2)} | Progress: ${((totalEquity/500)*100).toFixed(1)}%`);
+        } catch (e) { log('Balance check failed.'); }
     }
 
-    // 1. POSITION MONITORING (TP/SL)
+    // 1. POSITION MANAGEMENT (Trailing Guard)
     for (let i = positions.length - 1; i >= 0; i--) {
         const pos = positions[i];
         const data = await fetchHistory(pos.symbol);
         if (!data) continue;
         const currentPrice = data[data.length-1].close;
-        
         const isShort = pos.side === 'sell';
-        let exitTriggered = false;
-        let exitReason = '';
+        let exitTriggered = false, exitReason = '';
 
         if (isShort) {
-            if (currentPrice <= pos.tp) { 
-                console.log(`📈 [${pos.symbol}] TAKE PROFIT HIT! Transitioning to Trailing Profit...`);
-                pos.sl = pos.tp + (pos.entry - pos.tp) * 0.2; // Move SL to lock in 80% of gain
-                pos.tp = pos.tp - (pos.entry - pos.tp) * 0.5; // Next target 50% further
+            if (currentPrice <= pos.tp) {
+                log(`💹 [${pos.symbol}] Profit Target Hit! Locking 1.5% breathing room.`);
+                const newSl = currentPrice * 1.015;
+                if (!pos.sl || newSl < pos.sl) pos.sl = newSl;
+                pos.tp = currentPrice * 0.98;
                 savePositions(positions);
-                return; // Let it run, wait for next scan
-            }
-            else if (currentPrice >= pos.sl) { exitTriggered = true; exitReason = 'STOP LOSS (Short)'; }
+                continue;
+            } else if (currentPrice >= pos.sl) { exitTriggered = true; exitReason = 'TRAILING STOP'; }
         } else {
-            if (currentPrice >= pos.tp) { 
-                console.log(`📈 [${pos.symbol}] TAKE PROFIT HIT! Transitioning to Trailing Profit...`);
-                pos.sl = pos.tp - (pos.tp - pos.entry) * 0.2; // Move SL to lock in 80% of gain
-                pos.tp = pos.tp + (pos.tp - pos.entry) * 0.5; // Next target 50% further
+            if (currentPrice >= pos.tp) {
+                log(`💹 [${pos.symbol}] Profit Target Hit! Locking 1.5% breathing room.`);
+                const newSl = currentPrice * 0.985;
+                if (!pos.sl || newSl > pos.sl) pos.sl = newSl;
+                pos.tp = currentPrice * 1.02;
                 savePositions(positions);
-                return; // Let it run, wait for next scan
-            }
-            else if (currentPrice <= pos.sl) { exitTriggered = true; exitReason = 'STOP LOSS'; }
-        }
-
-        // --- NEW: Breakeven Shield ---
-        if (!exitTriggered && pos.leverage >= 12 && !pos.breakevenShieldTriggered) {
-             const profitPct = isShort ? (pos.entry - currentPrice) / pos.entry : (currentPrice - pos.entry) / pos.entry;
-             if (profitPct >= 0.005) {
-                 console.log(`🛡️ [${pos.symbol}] Breakeven Shield Activated! SL moved to $${pos.entry.toFixed(4)}`);
-                 pos.sl = pos.entry;
-                 pos.breakevenShieldTriggered = true;
-             }
+                continue;
+            } else if (currentPrice <= pos.sl) { exitTriggered = true; exitReason = 'TRAILING STOP'; }
         }
 
         if (exitTriggered && isLiveTrading) {
-            const sideToClose = pos.side === 'sell' ? 'buy' : 'sell';
-            console.log(`🎯 ${exitReason} TRIGGERED: Closing ${pos.amount} ${pos.symbol} at $${currentPrice} [${pos.exchange}]`);
+            log(`🎯 EXIT: Closing ${pos.symbol} at $${currentPrice.toFixed(4)} [${exitReason}]`);
             try {
                 if (pos.exchange === 'kraken') {
                     const kSymbol = pos.symbol.split('-')[0] + '/USD:USD';
-                    await krakenFutures.createOrder(kSymbol, 'market', sideToClose, pos.amount);
+                    await krakenFutures.createOrder(kSymbol, 'market', isShort ? 'buy' : 'sell', pos.amount, undefined, { 'reduceOnly': true });
                 } else {
+                    // Bitvavo fallback (ensure EUR pair name)
                     const bSymbol = `${pos.symbol.split('-')[0]}/EUR`;
-                    bitvavo.options['operatorId'] = 1773573000;
-                    await bitvavo.createOrder(bSymbol, 'market', sideToClose, pos.amount);
+                    await bitvavo.createOrder(bSymbol, 'market', isShort ? 'buy' : 'sell', pos.amount);
                 }
-                
-                // Log Exit
-                await fetch('http://localhost:3000/log-trade', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        symbol: pos.symbol, signal: `EXIT (${exitReason})`, price: currentPrice.toFixed(4),
-                        strategy: 'Active Manager', status: 'EXECUTED', exchange: pos.exchange
-                    })
-                });
-
                 positions.splice(i, 1);
                 savePositions(positions);
-            } catch (err) {
-                console.error(`❌ Exit Failed: ${err.message}`);
+            } catch (err) { 
+                if (err.message.includes('wouldNotReducePosition')) {
+                    log(`⚠️ [Sync] ${pos.symbol} already closed on exchange. Removing from local tracker.`);
+                    positions.splice(i, 1);
+                    savePositions(positions);
+                } else {
+                    log(`❌ Exit Fail: ${err.message}`); 
+                }
             }
         }
     }
-    // Final safety save
-    savePositions(positions);
 
-    // 2. SIGNAL SCANNING
-    const isHighVol = isHighVolatilitySession();
-    if (!isHighVol) console.log('🌙 Note: Current market is in Low-Volatility session (Asian hours). Filters tightened.');
-
+    // 2. ENTRY SCANNING (High Confluence)
     for (const symbol of SYMBOLS) {
         if (positions.find(p => p.symbol === symbol)) continue;
-
         const data = await fetchHistory(symbol);
         if (!data || data.length < 50) continue;
 
-        const adxValue = calculateADX(data, ADX_PERIOD);
-        const wR = calculateWilliamsR(data);
-        const larryBreakout = detectWilliamsBreakout(data);
-        const rsiValue = calculateRSI(data);
-        const bb = calculateBollingerBands(data);
-        const orderBlock = detectOrderBlock(data);
-        const currentPrice = data[data.length-1].close;
-        const hvn = calculateVolumeProfile(data);
-        
-        let signal = 'WAIT';
-        let strategy = 'None';
+        const wR = calculateWilliamsR(data), rsi = calculateRSI(data), bb = calculateBollingerBands(data);
+        const ob = detectOrderBlock(data), hvn = calculateVolumeProfile(data), adx = calculateADX(data, ADX_PERIOD);
+        const currentPrice = data[data.length-1].close, funding = await getFundingRate(symbol);
+
         let confluences = [];
-
-        // --- Master Long (Buy) Confluences ---
-        if (larryBreakout === 'BULLISH_BREAKOUT') confluences.push('Trend-Breakout');
-        if (wR < -85) confluences.push('Williams-Oversold');
-        if (rsiValue < 30) confluences.push('RSI-Oversold');
+        if (wR < -85) confluences.push('W%R-OS');
+        if (rsi < 35) confluences.push('RSI-OS');
         if (bb && currentPrice <= bb.lower) confluences.push('BB-Lower');
-        if (orderBlock === 'BULL_OB') confluences.push('Institutional-OB');
+        if (ob === 'BULL_OB') confluences.push('OrderBlock');
+        if (currentPrice > hvn) confluences.push('Above-HVN');
+        if (funding < 0) confluences.push('Funding-Bull');
 
-        // --- Master Short (Sell) Confluences ---
-        let sellConfluences = [];
-        if (larryBreakout === 'BEARISH_BREAKOUT') sellConfluences.push('Trend-Breakdown');
-        if (wR > -15) sellConfluences.push('Williams-Overbought');
-        if (rsiValue > 70) sellConfluences.push('RSI-Overbought');
-        if (bb && currentPrice >= bb.upper) sellConfluences.push('BB-Upper');
-        if (orderBlock === 'BEAR_OB') sellConfluences.push('Institutional-OB');
+        let bearConf = [];
+        if (wR > -15) bearConf.push('W%R-OB');
+        if (rsi > 65) bearConf.push('RSI-OB');
+        if (bb && currentPrice >= bb.upper) bearConf.push('BB-Upper');
+        if (ob === 'BEAR_OB') bearConf.push('OrderBlock');
+        if (currentPrice < hvn) bearConf.push('Below-HVN');
+        if (funding > 0) bearConf.push('Funding-Bear');
 
-        if (confluences.length >= 2) {
-            signal = `BUY (Master Alpha: ${confluences.length}x)`;
-            strategy = 'Master-Alpha';
-        } else if (sellConfluences.length >= 2) {
-            signal = `SELL (Master Alpha: ${sellConfluences.length}x)`;
-            strategy = 'Master-Alpha';
-        }
+        let signal = confluences.length >= 3 ? 'BUY' : (bearConf.length >= 3 ? 'SELL' : null);
 
-        if (signal !== 'WAIT') {
-            // --- Layer 3 & 4: Quantitative Filtering ---
-            if (!checkCorrelation(symbol, positions)) {
-                console.log(`[${symbol}] ⚠️ REJECTED: Correlation Limit Reached for this group.`);
-                signal = 'WAIT';
-            }
-        }
+        if (signal && isLiveTrading) {
+            if (krakenBalance < 15 || !checkCorrelation(symbol, positions)) continue;
+            const side = signal.toLowerCase(), activeConf = side === 'buy' ? confluences : bearConf;
+            const leverage = activeConf.length >= 4 ? 10 : 5;
+            const tradeValue = 40; 
 
-        if (signal !== 'WAIT') {
-            const side = signal.startsWith('BUY') ? 'buy' : 'sell';
-            const activeConfluences = side === 'buy' ? confluences : sellConfluences;
-            
-            // Calculate Certainty Score (0-100) - "Master Mastery" Logic
-            let certainty = 50 + (activeConfluences.length * 10); 
-            if (activeConfluences.includes('Institutional-OB')) certainty += 10;
-            if (adxValue > 30) certainty += 5;
-            
-            // Layer 4 Alchemy
-            const fundingRate = await getFundingRate(symbol);
-            const fundingBoost = side === 'buy' ? (fundingRate < 0) : (fundingRate > 0);
-            if (fundingBoost) {
-                certainty += 5; // Longs get paid or Shorts get paid
-                console.log(`[${symbol}] 💎 Funding Convergence Boost (+5%)`);
-            }
-
-            // HVN Magnetism
-            const distToHVN = Math.abs(currentPrice - hvn) / currentPrice;
-            if (distToHVN < 0.005) {
-                certainty += 5;
-                console.log(`[${symbol}] 🧲 High Volume Node Magnetism Boost (+5%)`);
-            }
-
-            if (isHighVol) certainty += 5;
-            
-            certainty = Math.min(certainty, 99);
-            
-            const priceDisplay = currentPrice < 0.01 ? currentPrice.toFixed(8) : currentPrice.toFixed(4);
-            console.log(`[${symbol}] ${signal} at $${priceDisplay} | Confluences: ${activeConfluences.join(', ')} | Certainty: ${certainty}%`);
-            
-            let status = 'MONITORING';
-            let exchangeToUse = null;
-
-            if (isLiveTrading) {
-                // Priority: Kraken (Futures) then Bitvavo (Spot)
-                if (krakenBalance >= 10) exchangeToUse = 'kraken';
-                else if (bitBalance >= 5) exchangeToUse = 'bitvavo';
-
-                if (exchangeToUse) {
-                    try {
-                        let amount = 0;
-                        let tradeValue = 0;
-                        let leverage = 5;
-
-                        if (exchangeToUse === 'kraken') {
-                            // Use 60% of budget for trading, 40% for margin as recommended
-                            tradeValue = Math.min(krakenBalance * 0.60, 50); 
-                            const kSymbol = symbol.split('-')[0] + '/USD:USD';
-                            
-                            try { await krakenFutures.loadMarkets(); } catch (e) {}
-                            
-                            amount = parseFloat(krakenFutures.amountToPrecision(kSymbol, (tradeValue * leverage / currentPrice)));
-                            const posValue = amount * currentPrice;
-                            
-                            console.log(`🚀 EXECUTING KRAKEN ${side.toUpperCase()}: ${amount} ${kSymbol} (${leverage}x Leverage) | Pos Value: $${posValue.toFixed(2)} | Est Margin: $${(posValue / leverage).toFixed(2)}`);
-                            
-                            await krakenFutures.createOrder(kSymbol, 'market', side, amount, undefined, { 'leverage': leverage });
-                        } else {
-                            if (side === 'sell') throw new Error('Bitvavo Spot does not support Shorting');
-                            
-                            tradeValue = bitBalance < 25 ? bitBalance * 0.95 : bitBalance * 0.5;
-                            amount = parseFloat((tradeValue / currentPrice).toFixed(6));
-                            const bSymbol = `${symbol.split('-')[0]}/EUR`;
-                            
-                            console.log(`🚀 EXECUTING BITVAVO BUY: ${amount} ${bSymbol}`);
-                            bitvavo.options['operatorId'] = 1773573000;
-                            await bitvavo.createOrder(bSymbol, 'market', 'buy', amount);
-                        }
-
-                        // Save Position
-                        const tpDist = side === 'buy' ? 0.02 / (exchangeToUse === 'kraken' ? 2 : 1) : -0.02 / (exchangeToUse === 'kraken' ? 2 : 1);
-                        const slDist = side === 'buy' ? -0.015 / (exchangeToUse === 'kraken' ? 2 : 1) : 0.015 / (exchangeToUse === 'kraken' ? 2 : 1);
-
-                        const newPos = {
-                            symbol: symbol, exchange: exchangeToUse,
-                            side: side, amount: amount, entry: currentPrice,
-                            leverage: exchangeToUse === 'kraken' ? leverage : 1,
-                            tp: currentPrice * (1 + tpDist), 
-                            sl: currentPrice * (slDist ? (1 + slDist) : (1 - 0.015)), // Safe fallback
-                            time: Date.now()
-                        };
-                        positions.push(newPos);
-                        savePositions(positions);
-                        status = 'EXECUTED';
-
-                    } catch (err) {
-                        console.error(`❌ Execution Failed on ${exchangeToUse}: ${err.message}`);
-                        status = 'ERROR';
-                    }
-                }
-            }
-
-            if (status === 'EXECUTED' || !isLiveTrading) {
-                try {
-                    await fetch('http://localhost:3000/log-trade', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            symbol: symbol, signal: signal, price: currentPrice.toFixed(4),
-                            strategy: strategy, status: status, exchange: exchangeToUse || 'Sim'
-                        })
-                    });
-                } catch (e) {}
-            }
+            try {
+                const kSymbol = symbol.split('-')[0] + '/USD:USD';
+                const amount = parseFloat(krakenFutures.amountToPrecision(kSymbol, (tradeValue * leverage / currentPrice)));
+                log(`🚀 ENTRY: ${signal} ${symbol} | Leverage: ${leverage}x | Conf: ${activeConf.join(', ')}`);
+                await krakenFutures.createOrder(kSymbol, 'market', side, amount, undefined, { 'leverage': leverage });
+                positions.push({ symbol, exchange: 'kraken', side, amount, entry: currentPrice, tp: currentPrice * (side === 'buy' ? 1.01 : 0.99), sl: currentPrice * (side === 'buy' ? 0.985 : 1.015), time: Date.now() });
+                savePositions(positions);
+            } catch (err) { log(`❌ Entry Fail: ${err.message}`); }
         }
     }
-    console.log(`=== SCAN COMPLETE ===`);
+    log(`--- SCAN COMPLETE ---`);
 }
+
+setInterval(runLiveBot, 60 * 1000);
 runLiveBot();
-setInterval(runLiveBot, 5 * 60 * 1000);
+log("Quant Eagle V5: Wall Street Protocol Active. Objective: $500.");
